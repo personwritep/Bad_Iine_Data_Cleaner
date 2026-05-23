@@ -1,0 +1,409 @@
+// ==UserScript==
+// @name         Bad Iine Data Cleaner
+// @namespace    http://tampermonkey.net/
+// @version      0.2
+// @description  ブログ削除されたIDのブロック登録を削除して最適化する
+// @author       Ameba Blog User
+// @match        https://ameblo.jp/*
+// @match        https://blog.ameba.jp/ucs/top*
+// ==/UserScript==
+
+
+let iine_block_data={}; // 総合ブロックデータ
+let iine_block_data_temp; // 処理用の仮ブロックデータ
+let iine_block_data_clean; // 処理後のブロックデータ
+
+let iine_block_id=[];
+let iine_block_img=[];
+let block_filter_id;
+let block_regex_id;
+let block_filter_img;
+let block_regex_img;
+
+
+
+let searchParams=new URLSearchParams(window.location.search);
+let action=0;
+if(searchParams.has('bidc')){
+    action=searchParams.get('bidc'); }
+
+
+
+if(document.domain.includes('ameba') && action==0){ //「管理画面」でのみ開始出来る
+    panel_disp();
+    if(read_local()){
+
+        let bidc_inner=document.querySelector('.bidc_inner');
+        bidc_inner.innerHTML=
+            '❶ ブロックデータをファイル保存する　'+
+            '管理画面の登録: <span class="now_item"></span>'+
+            '<input class="execute" type="submit" value="保存する">';
+
+        let now_item=document.querySelector('.now_item');
+        let execute=document.querySelector('.execute');
+        let end_task=document.querySelector('.end_task');
+
+        now_item.textContent=iine_block_data.length -2;
+
+        execute.onclick=function(){
+            backup('iine_mute.json');
+            setTimeout(()=>{
+                ucs_act();
+            }, 1000 ); }
+
+        end_task.onclick=function(){
+            close_pannel(); }
+
+        function ucs_act(){
+            bidc_inner.innerHTML=
+                '❷ ファイル保存が完了したら「ブログ画面」に移動します'+
+                '<input class="execute" type="submit" value="ブログ画面を開く">';
+            let execute=document.querySelector('.execute');
+            execute.onclick=function(){
+                open_blog(1); }}
+
+    }} // action==0
+
+
+
+if(action==1){
+    panel_disp();
+    if(read_local()){
+
+        reg_set();
+
+        let bidc_inner=document.querySelector('.bidc_inner');
+        bidc_inner.innerHTML=
+            '❸ 保存した最新の「iine_mute(n).json」を読込む'+
+            '<input class="execute" type="submit" value="ファイルを読込む">'+
+            '<input class="file_read" type="file">';
+
+        let execute=document.querySelector('.execute');
+        let end_task=document.querySelector('.end_task');
+        let file_read=document.querySelector('.file_read');
+
+        execute.onclick=function(){
+            read_backup(file_read, 1, 2); } //「1」差分追加 「2」次の処理
+
+        end_task.onclick=function(){
+            close_pannel(); }
+
+    }} // action==1
+
+
+
+if(action==2){
+    panel_disp();
+    if(read_local()){
+
+        let bidc_inner=document.querySelector('.bidc_inner');
+        bidc_inner.innerHTML=
+            '❹ 統合した現在のブロック登録：'+ (iine_block_data.length -2) +
+            '<input class="execute" type="submit" value="最適化処理に進む">';
+
+        let execute=document.querySelector('.execute');
+        let end_task=document.querySelector('.end_task');
+
+        execute.onclick=function(){
+            reload_q(3); }
+
+        end_task.onclick=function(){
+            close_pannel(); }
+
+    }} // action==2
+
+
+
+if(action==3){
+    panel_disp();
+    if(read_local()){
+
+        let bidc_inner=document.querySelector('.bidc_inner');
+        bidc_inner.innerHTML=
+            '➎ 現在のブロック登録：<span class="now_item"></span>　'+
+            '削除する不要登録：<span class="delete_item"></span>'+
+            '<input class="execute" type="submit" value="最適化を実行する">';
+
+        let now_item=document.querySelector('.now_item');
+        let delete_item=document.querySelector('.delete_item');
+        let execute=document.querySelector('.execute');
+        let end_task=document.querySelector('.end_task');
+
+        iine_block_data_temp=iine_block_data;
+
+        for(let k=2; k<iine_block_data_temp.length; k++){ // 2以上で実行に注意
+            cleaning(k); }
+        iine_block_data_clean=iine_block_data_temp.filter(function(item){
+            return item[0]!='deleted'; });
+
+        now_item.textContent=iine_block_data_temp.length-2;
+        delete_item.textContent=iine_block_data_temp.length - iine_block_data_clean.length;
+
+        execute.onclick=function(){
+            iine_block_data=iine_block_data_clean;
+            write_local();
+            reload_q(4); }
+
+        end_task.onclick=function(){
+            close_pannel(); }
+
+        function cleaning(k){
+            let url='https://ameblo.jp/'+ iine_block_data_temp[k][0];
+            if(check(url)){
+                iine_block_data_temp[k][0]='deleted'; }
+
+            function check(target_url){
+                if(load(target_url)!=200){
+                    return true; } // target_urlが無い時に true
+                function load(_url){
+                    let xhr;
+                    xhr=new XMLHttpRequest();
+                    xhr.open("HEAD", _url, false); //同期モード
+                    xhr.send();
+                    return xhr.status; }}}
+
+    }} // action==3
+
+
+
+if(action==4){
+    panel_disp();
+    if(read_local()){
+
+        let bidc_inner=document.querySelector('.bidc_inner');
+        bidc_inner.innerHTML=
+            '❻ 現在のブロック登録：<span class="now_item"></span>'+
+            '<input class="execute" type="submit" value="最適化したデータをファイル保存する">';
+
+        let now_item=document.querySelector('.now_item');
+        let execute=document.querySelector('.execute');
+        let end_task=document.querySelector('.end_task');
+
+        now_item.textContent=iine_block_data.length -2;
+
+        execute.onclick=function(){
+            backup('iine_mute_clean.json'); // ファイル名「iine_mute_clean.json」
+            setTimeout(()=>{
+                blog_act();
+            }, 1000 ); }
+
+        end_task.onclick=function(){
+            close_pannel(); }
+
+        function blog_act(){
+            bidc_inner.innerHTML=
+                '➐ ファイル保存が完了したら「管理画面」に移動します'+
+                '<input class="execute" type="submit" value="管理画面を開く">';
+            let execute=document.querySelector('.execute');
+            execute.onclick=function(){
+                open_ucs(5); }}
+
+    }} // action==4
+
+
+
+if(action==5){
+    panel_disp();
+    if(read_local()){
+
+        reg_set();
+
+        let bidc_inner=document.querySelector('.bidc_inner');
+        bidc_inner.innerHTML=
+            '❽ 最新の「iine_mute_clean(n).json」を読込む'+
+            '<input class="execute" type="submit" value="ファイルを読込む">'+
+            '<input class="file_read" type="file">';
+
+        let execute=document.querySelector('.execute');
+        let end_task=document.querySelector('.end_task');
+        let file_read=document.querySelector('.file_read');
+
+        execute.onclick=function(){
+            read_backup(file_read, 0, 6); } //「0」上書き読込み 「6」次の処理
+
+        end_task.onclick=function(){
+            close_pannel(); }
+
+    }} // action==5
+
+
+
+if(action==6){
+    panel_disp();
+    if(read_local()){
+
+        history.pushState('0', '0', location.href.replace(/\?.*$/, ''));
+
+        let bidc_panel=document.querySelector('#bidc_panel');
+        bidc_panel.style.height='120px';
+        let bidc_span=document.querySelector('.bidc_span');
+        bidc_span.innerHTML=
+            'Bad Iine Data Cleaner<br>'+
+            '　▶「Tampermonkey」のダッシュボードでツールを「OFF」にしてください';
+        bidc_span.style.lineHeight='28px';
+
+        let bidc_inner=document.querySelector('.bidc_inner');
+        bidc_inner.innerHTML=
+            '➒ ブロックデータの同期と最適化が完了しました　　'+
+            '現在のブロック登録：<span class="now_item"></span>';
+
+        let end_task=document.querySelector('.end_task');
+        let now_item=document.querySelector('.now_item');
+        now_item.textContent=iine_block_data.length -2;
+
+        end_task.onclick=function(){
+            close_pannel(); }
+
+    }} // action==6
+
+
+
+//======== Common Functions ====================
+
+function open_ucs(n){
+    let url='https://blog.ameba.jp/ucs/top.do?bidc='+ n;
+    location.href=url; }
+
+
+
+function open_blog(n){
+    let id=document.querySelector('.amebaId');
+    if(id){
+        id=id.textContent;
+        let url='https://ameblo.jp/'+ id +'?bidc='+ n;
+        location.href=url; }}
+
+
+
+function reload_q(n){
+    let url=location.href.replace(/\?.*$/, '') + '?bidc='+ n;
+    location.href=url; }
+
+
+
+function panel_disp(){
+    let panel=
+        '<div id="bidc_panel">'+
+        '<span class="bidc_span">Bad Iine Data Cleaner'+
+        '<input class="end_task" type="submit" value="処理終了"></span>'+
+        '<div class="bidc_inner"></div>'+
+        '<style>'+
+        '#bidc_panel { position: fixed; z-index: 4000; top: 60px; left: calc(50% - 300px); '+
+        'font: bold 16px/24px Meiryo; color: #666; background: #fff; '+
+        'width: 620px; height: 90px; padding: 17px 5px 0; text-align: left; '+
+        'border: 1px solid #aaa; border-radius: 6px; box-sizing: content-box; '+
+        'overflow: hidden; box-shadow: 0 20px 30px rgb(0, 0, 0, .2); } '+
+        '.bidc_span { margin-left: 20px; white-space: nowrap; } '+
+        '.bidc_inner { position: absolute; bottom: 6px; left: 5px; padding: 11px 15px 0;'+
+        'height: 37px; width: 590px; background: #e4eef8; line-height: 30px; } '+
+        '.now_item, .delete_item { display: inline-block; width: 40px; } '+
+        '.execute, .end_task { font: bold 16px/24px Meiryo; color: inherit; '+
+        'padding: 1px 6px; height: 28px; -webkit-appearance: button; cursor: pointer; } '+
+        '.execute { position: absolute; top: 11px; right: 20px; } '+
+        '.end_task { position: absolute; top: 14px; right: 25px; } '+
+        '.file_read { display: none; } ';
+    '</style><div>';
+
+    if(!document.querySelector('#bidc_panel')){
+        document.querySelector('body').insertAdjacentHTML('beforeend', panel); }
+
+} // panel_disp()
+
+
+
+function close_pannel(){
+    history.pushState('0', '0', location.href.replace(/\?.*$/, '')); // URLから「?」以降を削除
+    let bidc_panel=document.querySelector('#bidc_panel');
+    if(bidc_panel){
+        bidc_panel.remove(); }}
+
+
+
+function read_local(){
+    let read_json=localStorage.getItem('iine_id_back'); // ローカルストレージ 保存名
+    iine_block_data=JSON.parse(read_json);
+    if(iine_block_data==null){
+        data_error(); }
+    else{
+        return true; }}
+
+
+
+function data_error(){
+    let bidc_inner=document.querySelector('.bidc_inner');
+    if(bidc_inner){
+        bidc_inner.innerHTML=
+            "⛔  ブロックデータがないので処理ができません　このツールを終了してください"; }
+
+    let end_task=document.querySelector('.end_task');
+    if(end_task){
+        end_task.onclick=function(){
+            close_pannel(); }}}
+
+
+
+function write_local(){
+    let write_json=JSON.stringify(iine_block_data);
+    localStorage.setItem('iine_id_back', write_json); } // ローカルストレージ 保存名
+
+
+
+function backup(filename){
+    let write_json=JSON.stringify(iine_block_data);
+    let blob=new Blob([write_json], {type: 'application/json'});
+    let a_elem=document.createElement('a');
+    a_elem.href=URL.createObjectURL(blob);
+    a_elem.download=filename; // 保存ファイル名
+    a_elem.click();
+    URL.revokeObjectURL(a_elem.href); }
+
+
+
+function reg_set(){
+    iine_block_id=[];
+    iine_block_img=[];
+    for(let k=0; k<iine_block_data.length; k++){
+        iine_block_id[k]=iine_block_data[k][0];
+        iine_block_img[k]=iine_block_data[k][1]; }
+    block_filter_id=iine_block_id.join('|');
+    block_regex_id=RegExp(block_filter_id);
+    block_filter_img=iine_block_img.join('|');
+    block_regex_img=RegExp(block_filter_img); }
+
+
+
+function read_backup(button, sabun, n){ // sabun:「1」で差分追加
+    button.click();
+
+    button.addEventListener("change", function(){
+        if(!(button.value)) return; // ファイルが選択されない場合
+        let file_list=button.files;
+        if(!file_list) return; // ファイルリストが選択されない場合
+        let file=file_list[0];
+        if(!file) return; // ファイルが無い場合
+
+        let file_reader=new FileReader();
+        file_reader.readAsText(file);
+        file_reader.onload=function(){
+            if(file_reader.result.slice(0, 15)=='[["tmp1","img1"'){ // iine_mute.jsonの確認
+                let data_in=JSON.parse(file_reader.result);
+
+                if(sabun==1){ // 差分追加処理
+                    for(let k=0; k<data_in.length; k++){
+                        if(block_regex_id.test(data_in[k][0])!=true){ // ID未出なら追加
+                            iine_block_data.push([data_in[k][0], data_in[k][1]]); }
+                        else if(block_regex_id.test(data_in[k][0])==true){ // ID既出の場合
+                            for(let s=0; s<iine_block_data.length; s++){
+                                if(iine_block_data[s][0]==data_in[k][0]){
+                                    if(iine_block_data[s][1]!=data_in[k][1]){ // imgのSRCが異なる
+                                        if(Number(iine_block_data[s][1].slice(0, 8))
+                                           <Number(data_in[k][1].slice(0, 8))){
+                                            iine_block_data[s][1]=data_in[k][1]; }}}}}}}
+                else{
+                    iine_block_data=data_in; } // 読込み上書き処理
+
+                write_local(); // ローカルストレージ 保存
+                reload_q(n);
+            }}; });
+
+} //read_backup()
